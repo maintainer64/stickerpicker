@@ -59,7 +59,7 @@ def add_to_index(name: str, output_dir: str) -> None:
 
 
 def make_sticker(mxc: str, width: int, height: int, size: int,
-                 body: str = "") -> matrix.StickerInfo:
+                 body: str = "", mimetype: str = "image/png") -> matrix.StickerInfo:
     return {
         "body": body,
         "url": mxc,
@@ -67,7 +67,7 @@ def make_sticker(mxc: str, width: int, height: int, size: int,
             "w": width,
             "h": height,
             "size": size,
-            "mimetype": "image/png",
+            "mimetype": mimetype,
 
             # Element iOS compatibility hack
             "thumbnail_url": mxc,
@@ -75,7 +75,7 @@ def make_sticker(mxc: str, width: int, height: int, size: int,
                 "w": width,
                 "h": height,
                 "size": size,
-                "mimetype": "image/png",
+                "mimetype": mimetype,
             },
         },
         "msgtype": "m.sticker",
@@ -87,10 +87,19 @@ def add_thumbnails(stickers: List[matrix.StickerInfo], stickers_data: Dict[str, 
     thumbnails.mkdir(parents=True, exist_ok=True)
 
     for sticker in stickers:
-        if sticker["url"] not in stickers_data:  # TODO: change
+        url = sticker.get("url")
+        if not url or url not in stickers_data:
             continue
-        image_data, _, _ = convert_image(stickers_data[sticker["url"]], 128, 128)
 
-        name = sticker["url"].split("/")[-1]
+        mimetype = sticker.get("info", {}).get("mimetype", "image/png")
+        is_gif = mimetype == "image/gif"
+
+        if is_gif:
+            image_data = stickers_data[url]
+        else:
+            image_data, _, _ = convert_image(stickers_data[url], 128, 128)
+
+        name = url.split("/")[-1]
+
         thumbnail_path = thumbnails / name
         thumbnail_path.write_bytes(image_data)
