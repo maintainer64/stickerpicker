@@ -86,9 +86,11 @@ def add_thumbnails(stickers: List[matrix.StickerInfo], stickers_data: Dict[str, 
     thumbnails = Path(output_dir, "thumbnails")
     thumbnails.mkdir(parents=True, exist_ok=True)
 
-    for sticker in stickers:       
+    for sticker in stickers:
+        if sticker["url"] not in stickers_data:  # TODO: change
+            continue
         image_data, _, _ = convert_image(stickers_data[sticker["url"]], 128, 128)
-        
+
         name = sticker["url"].split("/")[-1]
         thumbnail_path = thumbnails / name
         thumbnail_path.write_bytes(image_data)

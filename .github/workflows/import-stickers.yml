@@ -1,0 +1,43 @@
+name: Import Stickers
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'
+  push:
+    paths:
+      - 'sticker/links.json'
+  workflow_dispatch:
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          pip install -e .
+
+      - name: Create config.json
+        run: |
+          jq -n \
+            --arg hs "${{ secrets.MATRIX_HOMESERVER }}" \
+            --arg uid "${{ secrets.MATRIX_USER_ID }}" \
+            --arg token "${{ secrets.MATRIX_ACCESS_TOKEN }}" \
+            --arg bot "${{ secrets.TELEGRAM_BOT_TOKEN }}" \
+            '{homeserver: $hs, user_id: $uid, access_token: $token, telegram_bot_token: $bot}' > config.json
+
+      - name: Import stickers
+        run: |
+          sticker-import
+
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Update sticker packs"
+          file_pattern: web/packs/*

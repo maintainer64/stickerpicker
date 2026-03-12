@@ -83,9 +83,9 @@ async def reupload_pack(client: TelegramClient, pack: StickerSetFull, output_dir
             print(f"Skipped reuploading {document.id}")
         except KeyError:
             reuploaded_documents[document.id], data = await reupload_document(client, document)
+            stickers_data[reuploaded_documents[document.id]["url"]] = data  # TODO: change
         # Always ensure the body and telegram metadata is correct
         add_meta(document, reuploaded_documents[document.id], pack)
-        stickers_data[reuploaded_documents[document.id]["url"]] = data
 
     for sticker in pack.packs:
         if not sticker.emoticon:
@@ -121,18 +121,18 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("--list", help="List your saved sticker packs", action="store_true")
 parser.add_argument("--session", help="Telethon session file name", default="sticker-import")
+parser.add_argument("--file", help="Select file URLs to import", default="sticker/links.json")
 parser.add_argument("--config",
                     help="Path to JSON file with Matrix homeserver and access_token",
                     type=str, default="config.json")
 parser.add_argument("--output-dir", help="Directory to write packs to", default="web/packs/",
                     type=str)
-parser.add_argument("pack", help="Sticker pack URLs to import", action="append", nargs="*")
 
 
 async def main(args: argparse.Namespace) -> None:
-    await matrix.load_config(args.config)
+    config = await matrix.load_config(args.config)
     client = TelegramClient(args.session, 298751, "cb676d6bae20553c9996996a8f52b4d7")
-    await client.start()
+    await client.start(phone=None, password=None, bot_token=config["telegram_bot_token"])
 
     if args.list:
         stickers: AllStickers = await client(GetAllStickersRequest(hash=0))
@@ -143,9 +143,11 @@ async def main(args: argparse.Namespace) -> None:
             print(f"{index:>{width}}. {saved_pack.title} "
                   f"(t.me/addstickers/{saved_pack.short_name})")
             index += 1
-    elif args.pack[0]:
+    elif args.file:
+        with open(args.file, "r") as f:
+            pack_url_list = json.load(f)
         input_packs = []
-        for pack_url in args.pack[0]:
+        for pack_url in pack_url_list:
             match = pack_url_regex.match(pack_url)
             if not match:
                 print(f"'{pack_url}' doesn't look like a sticker pack URL")

@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, user-scalable=no">
+	<title>Circle Recorder</title>
+	<link rel="stylesheet" href="style/index.css">
+	<script src="https://unpkg.com/matrix-widget-api@1.17.0/dist/api.min.js"></script>
+	<style>
+		* { box-sizing: border-box; }
+		body {
+			margin: 0; padding: 0;
+			background: #1a1a1a;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+			color: #fff;
+			min-height: 100vh;
+			display: flex; flex-direction: column; align-items: center;
+		}
+		.container {
+			width: 100%; max-width: 400px; padding: 16px;
+			display: flex; flex-direction: column; gap: 16px;
+		}
+		h1 { text-align: center; font-size: 20px; margin: 0; }
+		.video-container {
+			position: relative;
+			width: 100%; aspect-ratio: 1;
+			border-radius: 50%; overflow: hidden; background: #000;
+		}
+		video, canvas { width: 100%; height: 100%; object-fit: cover; }
+		canvas { position: absolute; top: 0; left: 0; }
+		.controls { display: flex; gap: 12px; justify-content: center; }
+		button {
+			padding: 12px 24px; border: none; border-radius: 8px;
+			font-size: 16px; font-weight: 500; cursor: pointer; transition: all 0.2s;
+		}
+		.btn-record { background: #e74c3c; color: white; }
+		.btn-record.recording { animation: pulse 1s infinite; }
+		.btn-send { background: #3498db; color: white; }
+		.btn-send:disabled { background: #555; cursor: not-allowed; }
+		.btn-cancel { background: #555; color: white; }
+		.status { text-align: center; padding: 12px; background: #333; border-radius: 8px; font-size: 14px; }
+		.status.error { background: #e74c3c; }
+		.status.success { background: #27ae60; }
+		.recording-indicator {
+			position: absolute; top: 16px; left: 16px;
+			background: #e74c3c; padding: 8px 16px; border-radius: 20px;
+			font-size: 14px; font-weight: 600; display: none; align-items: center; gap: 8px;
+		}
+		.recording-indicator.visible { display: flex; }
+		.recording-dot {
+			width: 10px; height: 10px; background: white;
+			border-radius: 50%; animation: blink 1s infinite;
+		}
+		@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+		@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+		.hidden { display: none !important; }
+		.debug { font-size: 12px; color: #888; text-align: center; padding: 8px; }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<h1>Circle Recorder</h1>
+		<div class="video-container">
+			<video id="video" autoplay playsinline muted></video>
+			<canvas id="canvas"></canvas>
+			<div class="recording-indicator" id="recording-indicator">
+				<span class="recording-dot"></span> REC
+			</div>
+		</div>
+		<div class="controls" id="record-controls">
+			<button class="btn-record" id="btn-record">Record</button>
+		</div>
+		<div class="controls hidden" id="preview-controls">
+			<button class="btn-cancel" id="btn-cancel">Cancel</button>
+			<button class="btn-send" id="btn-send">Send</button>
+		</div>
+		<div class="status" id="status">Initializing...</div>
+		<div class="debug" id="debug"></div>
+	</div>
+
+	<script>
+		const video = document.getElementById('video');
+		const canvas = document.getElementById('canvas');
+		const btnRecord = document.getElementById('btn-record');
+		const btnSend = document.getElementById('btn-send');
+		const btnCancel = document.getElementById('btn-cancel');
+		const statusEl = document.getElementById('status');
+		const debugEl = document.getElementById('debug');
+		const recordingIndicator = document.getElementById('recording-indicator');
+		const recordControls = document.getElementById('record-controls');
+		const previewControls = document.getElementById('preview-controls');
+
+		let widgetApi = null;
+		let mediaStream = null;
+		let mediaRecorder = null;
+		let recordedChunks = [];
+		let recordedBlob = null;
+		let isRecording = false;
+
+		const urlParams = new URLSearchParams(window.location.search);
+		const accessToken = urlParams.get('accessToken');
+
+		function log(msg) {
+			debugEl.textContent = msg;
+			console.log('[Circle]', msg);
+		}
+
+		async function init() {
+			try {
+				log('Creating WidgetApi...');
+
+				widgetApi = new mxwidgets.WidgetApi();
+
+				log('Requesting capabilities...');
+				widgetApi.requestCapability(mxwidgets.MatrixCapabilities.SEND_MESSAGE);
+
+				widgetApi.on('ready', () => {
+					log('Widget API ready');
+					initCamera();
+				});
+
+				widgetApi.on(`action:${mxwidgets.WidgetApiToWidgetAction.ToggleVisibility}`, (ev) => {
+					ev.preventDefault();
+					widgetApi.transport.reply(ev.detail, {});
+				});
+
+				widgetApi.start();
+				widgetApi.sendContentLoaded();
+
+			} catch (err) {
+				log('Error: ' + err.message);
+				statusEl.textContent = 'Error: ' + err.message;
+				statusEl.classList.add('error');
+			}
+		}
+
+		async function initCamera() {
+			try {
+				statusEl.textContent = 'Starting camera...';
+				mediaStream = await navigator.mediaDevices.getUserMedia({
+					video: { facingMode: "user", width: 512, height: 512 },
+					audio: true
+				});
+				video.srcObject = mediaStream;
+				video.play();
+				drawCircle();
+				statusEl.textContent = 'Tap record to start';
+			} catch (err) {
+				log('Camera error: ' + err.message);
+				statusEl.textContent = 'Camera error: ' + err.message;
+				statusEl.classList.add('error');
+			}
+		}
+
+		function drawCircle() {
+			if (!video.videoWidth) {
+				requestAnimationFrame(drawCircle);
+				return;
+			}
+
+			const ctx = canvas.getContext('2d');
+			canvas.width = video.videoWidth;
+			canvas.height = video.videoHeight;
+
+			function draw() {
+				ctx.save();
+				ctx.beginPath();
+				ctx.arc(canvas.width / 2, canvas.height / 2, canvas.width / 2 - 10, 0, Math.PI * 2);
+				ctx.clip();
+				ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+				ctx.restore();
+
+				ctx.beginPath();
+				ctx.arc(canvas.width / 2, canvas.height / 2, canvas.width / 2 - 5, 0, Math.PI * 2);
+				ctx.strokeStyle = 'white';
+				ctx.lineWidth = 10;
+				ctx.stroke();
+
+				requestAnimationFrame(draw);
+			}
+			draw();
+		}
+
+		btnRecord.addEventListener('click', () => {
+			if (!isRecording) startRecording();
+			else stopRecording();
+		});
+
+		function startRecording() {
+			recordedChunks = [];
+
+			const canvasStream = canvas.captureStream(30);
+			const audioStream = mediaStream.getAudioTracks().map(track => track.clone());
+
+			const combinedStream = new MediaStream([
+				...canvasStream.getVideoTracks(),
+				...audioStream
+			]);
+
+			let options = { mimeType: 'video/webm;codecs=vp9,opus' };
+			if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+				options.mimeType = 'video/webm;codecs=vp8,opus';
+			}
+			if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+				options.mimeType = 'video/webm';
+			}
+
+			mediaRecorder = new MediaRecorder(combinedStream, options);
+
+			mediaRecorder.ondataavailable = (e) => {
+				if (e.data.size > 0) recordedChunks.push(e.data);
+			};
+
+			mediaRecorder.onstop = () => {
+				recordedBlob = new Blob(recordedChunks, { type: 'video/webm' });
+				showPreview();
+			};
+
+			mediaRecorder.start(100);
+			isRecording = true;
+			btnRecord.textContent = 'Stop';
+			btnRecord.classList.add('recording');
+			recordingIndicator.classList.add('visible');
+			statusEl.textContent = 'Recording...';
+			statusEl.className = 'status';
+		}
+
+		function stopRecording() {
+			if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+				mediaRecorder.stop();
+			}
+			isRecording = false;
+			btnRecord.textContent = 'Record';
+			btnRecord.classList.remove('recording');
+			recordingIndicator.classList.remove('visible');
+		}
+
+		function showPreview() {
+			recordControls.classList.add('hidden');
+			previewControls.classList.remove('hidden');
+
+			const previewVideo = document.createElement('video');
+			previewVideo.src = URL.createObjectURL(recordedBlob);
+			previewVideo.controls = true;
+			previewVideo.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%;';
+
+			const container = document.querySelector('.video-container');
+			container.innerHTML = '';
+			container.appendChild(previewVideo);
+
+			statusEl.textContent = 'Preview - Ready to send';
+		}
+
+		btnCancel.addEventListener('click', resetToCamera);
+
+		function resetToCamera() {
+			recordedBlob = null;
+			video.style.display = 'block';
+			canvas.style.display = 'block';
+
+			const container = document.querySelector('.video-container');
+			container.innerHTML = '';
+			container.appendChild(video);
+			container.appendChild(canvas);
+			drawCircle();
+
+			recordControls.classList.remove('hidden');
+			previewControls.classList.add('hidden');
+
+			statusEl.textContent = 'Tap record to start';
+			statusEl.className = 'status';
+		}
+
+		btnSend.addEventListener('click', async () => {
+			if (!recordedBlob) return;
+			await sendToChat(recordedBlob);
+		});
+
+		async function sendToChat(blob) {
+			statusEl.textContent = 'Uploading...';
+			statusEl.className = 'status';
+
+			try {
+				let contentUri;
+
+				if (accessToken) {
+					log('Uploading with direct token...');
+					const response = await fetch(`${urlParams.get('matrixServerUrl') || 'https://matrix.org'}/_matrix/media/v3/upload`, {
+						method: 'POST',
+						headers: {
+							'Authorization': `Bearer ${accessToken}`,
+							'Content-Type': 'video/webm',
+							'Content-Length': blob.size
+						},
+						body: blob
+					});
+
+					if (!response.ok) {
+						const errorText = await response.text();
+						throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+					}
+
+					const data = await response.json();
+					contentUri = data.content_uri;
+				} else {
+					throw new Error("No access token. Add ?accessToken=YOUR_TOKEN to URL");
+				}
+
+				if (!contentUri) {
+					throw new Error('Failed to get MXC URI');
+				}
+
+				log('Sending message to chat...');
+				statusEl.textContent = 'Sending to chat...';
+
+				const messageContent = {
+					msgtype: "m.video",
+					body: "circle.webm",
+					url: contentUri,
+					info: {
+						mimetype: "video/webm",
+						size: blob.size,
+						"org.matrix.msc2677.video_circle": {}
+					}
+				};
+
+				await widgetApi.sendRoomEvent("m.room.message", messageContent);
+
+				statusEl.textContent = 'Circle sent!';
+				statusEl.className = 'status success';
+
+				setTimeout(resetToCamera, 1500);
+
+			} catch (e) {
+				log('Error: ' + e.message);
+				statusEl.textContent = 'Error: ' + e.message;
+				statusEl.classList.add('error');
+			}
+		}
+
+		init();
+	</script>
+</body>
+</html>

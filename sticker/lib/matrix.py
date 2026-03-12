@@ -23,6 +23,7 @@ access_token: Optional[str] = None
 homeserver_url: Optional[str] = None
 
 upload_url: Optional[URL] = None
+telegram_bot_token: Optional[str] = None  # TODO: change
 
 if TYPE_CHECKING:
     from typing import TypedDict
@@ -48,17 +49,19 @@ else:
     StickerInfo = None
 
 
-async def load_config(path: str) -> None:
-    global access_token, homeserver_url, upload_url
+async def load_config(path: str) -> dict:
+    global access_token, homeserver_url, upload_url, telegram_bot_token  # TODO: change
     try:
         with open(path) as config_file:
             config = json.load(config_file)
             homeserver_url = config["homeserver"]
             access_token = config["access_token"]
+            telegram_bot_token = config["telegram_bot_token"]
     except FileNotFoundError:
         print("Matrix config file not found. Please enter your homeserver and access token.")
         homeserver_url = input("Homeserver URL: ")
         access_token = input("Access token: ")
+        telegram_bot_token = input("Telegram Bot Token: ")
         whoami_url = URL(homeserver_url) / "_matrix" / "client" / "v3" / "account" / "whoami"
         if whoami_url.scheme not in ("https", "http"):
             whoami_url = whoami_url.with_scheme("https")
@@ -68,10 +71,12 @@ async def load_config(path: str) -> None:
                 "homeserver": homeserver_url,
                 "user_id": user_id,
                 "access_token": access_token,
+                "telegram_bot_token":  telegram_bot_token,
             }, config_file)
         print(f"Wrote config to {path}")
 
     upload_url = URL(homeserver_url) / "_matrix" / "media" / "v3" / "upload"
+    return config
 
 
 async def whoami(url: URL, access_token: str) -> str:
