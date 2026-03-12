@@ -1,7 +1,17 @@
 {
   "packs": [
     "myttcore.json",
-    "DedVoVseDekanat.json"
+    "DedVoVseDekanat.json",
+    "pIN_8fR5Nq_by_sticker0014Bot.json",
+    "bibizyanky_pon_pon_by_fStikBot.json",
+    "monke2004.json",
+    "supermegahype.json",
+    "f_weyjrjak_896383854_by_fStikBot.json",
+    "kitties4bynorufx_by_fStikBot.json",
+    "Je_Lissa.json",
+    "kittysforlife_by_fStikBot.json",
+    "Peepo_Pepe.json",
+    "TikTok_cats_animals.json"
   ],
   "homeserver_url": "https://matrix.gubanov.site"
 }
