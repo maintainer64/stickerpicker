@@ -97,9 +97,6 @@ export class GiphySearchTab extends Component {
 							</div>
 						`)}
 					</div>
-					<div class="footer powered-by-giphy">
-						<img src="./res/powered-by-giphy.png" alt="Powered by GIPHY"/>
-					</div>
 				</section>
 			</div>
 		`
