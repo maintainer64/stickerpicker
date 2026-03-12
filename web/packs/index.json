@@ -1,6 +1,7 @@
 {
   "packs": [
-    "myttcore.json"
+    "myttcore.json",
+    "DedVoVseDekanat.json"
   ],
   "homeserver_url": "https://matrix.gubanov.site"
 }
